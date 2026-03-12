@@ -17,12 +17,9 @@
    CONSTANTS
    ===================================================================== */
 
-/** Gemini REST endpoint — using gemini-2.5-flash (the model available on the free tier). */
+/** Gemini REST endpoint — using gemini-2.5-flash. */
 const GEMINI_API_URL =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-
-/** Default API key — pre-fills the form so you don't have to type it every time. */
-const DEFAULT_API_KEY = 'AIzaSyBA4Yj_hfCewWO4AErapftZ-A83Z0-FnPk';
 
 /* =====================================================================
    DOM REFERENCES
@@ -32,8 +29,6 @@ const form            = document.getElementById('generatorForm');
 const industryInput   = document.getElementById('industry');
 const keywordsInput   = document.getElementById('keywords');
 const targetInput     = document.getElementById('target');
-const apiKeyInput     = document.getElementById('apiKey');
-const toggleApiKeyBtn = document.getElementById('toggleApiKey');
 const generateBtn     = document.getElementById('generateBtn');
 const regenerateBtn   = document.getElementById('regenerateBtn');
 const loadingEl       = document.getElementById('loading');
@@ -49,9 +44,6 @@ const slogansGrid     = document.getElementById('slogansGrid');
 /** Stores the last successful set of inputs so Regenerate can reuse them. */
 let lastInputs = null;
 
-// Pre-fill the API key input so the user doesn't have to type it manually
-apiKeyInput.value = DEFAULT_API_KEY;
-
 /* =====================================================================
    FORM — VALIDATION HELPERS
    ===================================================================== */
@@ -65,7 +57,6 @@ function validateInputs() {
     { el: industryInput, errorId: 'industry-error', label: 'Business Industry' },
     { el: keywordsInput, errorId: 'keywords-error', label: 'Main Keywords'      },
     { el: targetInput,   errorId: 'target-error',   label: 'Target Customers'   },
-    { el: apiKeyInput,   errorId: 'apiKey-error',   label: 'Gemini API Key'     },
   ];
 
   let valid = true;
@@ -103,7 +94,6 @@ function clearAllFieldErrors() {
     { inputId: 'industry', errorId: 'industry-error' },
     { inputId: 'keywords', errorId: 'keywords-error' },
     { inputId: 'target',   errorId: 'target-error'   },
-    { inputId: 'apiKey',   errorId: 'apiKey-error'   },
   ];
   for (const { inputId, errorId } of fieldIds) {
     clearFieldError(
@@ -216,11 +206,18 @@ Return ONLY valid JSON with this exact structure (no markdown, no extra text):
  * Sends the prompt to the Gemini API and returns parsed brand/slogan data.
  *
  * @param {string} prompt  - The fully constructed prompt string.
- * @param {string} apiKey  - The user's Gemini API key.
  * @returns {Promise<{brandNames: Array, slogans: Array}>}
  * @throws {Error} If the network request fails or the response is unparseable.
  */
-async function callAIAPI(prompt, apiKey) {
+async function callAIAPI(prompt) {
+  const apiKey = typeof CONFIG !== 'undefined' && CONFIG.GEMINI_API_KEY;
+
+  if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
+    throw new Error(
+      'Gemini API key is not configured. Please copy config.example.js to config.js and add your API key.',
+    );
+  }
+
   const url = `${GEMINI_API_URL}?key=${encodeURIComponent(apiKey)}`;
 
   const requestBody = {
@@ -263,6 +260,16 @@ async function callAIAPI(prompt, apiKey) {
   if (!response.ok) {
     const body = await response.text();
     console.error('[callAIAPI] HTTP error:', response.status, body);
+
+    // Try to extract the actual error message from Google's response
+    let detail = '';
+    try {
+      const errorJson = JSON.parse(body);
+      detail = errorJson?.error?.message || '';
+    } catch {
+      // body is not JSON, ignore
+    }
+
     // Map common HTTP status codes to meaningful messages
     const errorMessages = {
       400: 'Bad request — the prompt may be invalid.',
@@ -271,9 +278,10 @@ async function callAIAPI(prompt, apiKey) {
       429: 'Rate limit exceeded — please wait a moment and try again.',
       500: 'Gemini server error — please try again in a few seconds.',
     };
-    const message =
+    const base =
       errorMessages[response.status] ??
       `API request failed with status ${response.status}.`;
+    const message = detail ? `${base} (${detail})` : base;
     throw new Error(message);
   }
 
@@ -466,7 +474,7 @@ function renderResults(data) {
  * Main entry point for idea generation.
  * Validates form inputs, calls the AI API, and renders results.
  *
- * @param {{ industry: string, keywords: string, target: string, apiKey: string }} inputs
+ * @param {{ industry: string, keywords: string, target: string }} inputs
  */
 async function generateIdeas(inputs) {
   hideApiError();
@@ -477,7 +485,7 @@ async function generateIdeas(inputs) {
     const prompt = buildPrompt(inputs.industry, inputs.keywords, inputs.target);
 
     console.log('[generateIdeas] Calling Gemini API…');
-    const data   = await callAIAPI(prompt, inputs.apiKey);
+    const data   = await callAIAPI(prompt);
 
     console.log('[generateIdeas] Got data, rendering…', data);
     renderResults(data);
@@ -505,7 +513,6 @@ form.addEventListener('submit', async (event) => {
     industry: industryInput.value.trim(),
     keywords: keywordsInput.value.trim(),
     target:   targetInput.value.trim(),
-    apiKey:   apiKeyInput.value.trim(),
   };
 
   await generateIdeas(lastInputs);
@@ -518,16 +525,8 @@ regenerateBtn.addEventListener('click', async () => {
   await generateIdeas(lastInputs);
 });
 
-/** Toggle API key visibility. */
-toggleApiKeyBtn.addEventListener('click', () => {
-  const isPassword = apiKeyInput.type === 'password';
-  apiKeyInput.type          = isPassword ? 'text' : 'password';
-  toggleApiKeyBtn.textContent = isPassword ? '🙈' : '👁';
-  toggleApiKeyBtn.title       = isPassword ? 'Hide key' : 'Show key';
-});
-
 /** Clear field error on input to give immediate positive feedback. */
-[industryInput, keywordsInput, targetInput, apiKeyInput].forEach((input) => {
+[industryInput, keywordsInput, targetInput].forEach((input) => {
   const errorEl = document.getElementById(`${input.id}-error`);
   input.addEventListener('input', () => clearFieldError(input, errorEl));
 });
