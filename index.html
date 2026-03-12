@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Brand Name &amp; Slogan Generator</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="header">
+    <div class="header__inner">
+      <div class="header__logo" aria-label="App logo">✦</div>
+      <h1 class="header__title">AI Brand Generator</h1>
+      <p class="header__subtitle">
+        Generate creative brand names &amp; slogans for your business — powered by AI.
+      </p>
+    </div>
+  </header>
+
+  <!-- ===== MAIN ===== -->
+  <main class="main">
+
+    <!-- INPUT FORM SECTION -->
+    <section class="form-section" aria-labelledby="form-heading">
+      <h2 id="form-heading" class="section-title">Tell us about your business</h2>
+
+      <form id="generatorForm" class="form" novalidate>
+
+        <div class="form__group">
+          <label class="form__label" for="industry">
+            Business Industry
+            <span class="form__required" aria-hidden="true">*</span>
+          </label>
+          <input
+            id="industry"
+            name="industry"
+            type="text"
+            class="form__input"
+            placeholder="e.g. Coffee shop, Tech startup, Fashion brand…"
+            autocomplete="off"
+            aria-required="true"
+          />
+          <span class="form__error" id="industry-error" role="alert"></span>
+        </div>
+
+        <div class="form__group">
+          <label class="form__label" for="keywords">
+            Main Keywords
+            <span class="form__required" aria-hidden="true">*</span>
+          </label>
+          <input
+            id="keywords"
+            name="keywords"
+            type="text"
+            class="form__input"
+            placeholder="e.g. organic, premium, handcrafted (comma-separated)"
+            autocomplete="off"
+            aria-required="true"
+          />
+          <span class="form__error" id="keywords-error" role="alert"></span>
+        </div>
+
+        <div class="form__group">
+          <label class="form__label" for="target">
+            Target Customers
+            <span class="form__required" aria-hidden="true">*</span>
+          </label>
+          <input
+            id="target"
+            name="target"
+            type="text"
+            class="form__input"
+            placeholder="e.g. young professionals, health-conscious adults…"
+            autocomplete="off"
+            aria-required="true"
+          />
+          <span class="form__error" id="target-error" role="alert"></span>
+        </div>
+
+        <!-- API Key input -->
+        <div class="form__group">
+          <label class="form__label" for="apiKey">
+            Gemini API Key
+            <span class="form__required" aria-hidden="true">*</span>
+          </label>
+          <div class="form__input-wrapper">
+            <input
+              id="apiKey"
+              name="apiKey"
+              type="password"
+              class="form__input"
+              placeholder="Paste your Google Gemini API key here"
+              autocomplete="off"
+              aria-required="true"
+            />
+            <button
+              type="button"
+              class="form__toggle-key"
+              id="toggleApiKey"
+              aria-label="Toggle API key visibility"
+              title="Show / Hide key"
+            >👁</button>
+          </div>
+          <span class="form__error" id="apiKey-error" role="alert"></span>
+          <p class="form__hint">
+            Get a free key at
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">
+              Google AI Studio
+            </a>.
+            Your key is never stored.
+          </p>
+        </div>
+
+        <!-- Global API error banner -->
+        <div id="apiError" class="api-error" role="alert" hidden></div>
+
+        <button type="submit" class="btn-generate" id="generateBtn">
+          <span class="btn-generate__icon">⚡</span>
+          <span class="btn-generate__text">Generate Ideas</span>
+        </button>
+
+      </form>
+    </section>
+
+    <!-- LOADING INDICATOR -->
+    <div id="loading" class="loading" hidden aria-live="polite" aria-label="Generating ideas…">
+      <div class="loading__spinner" aria-hidden="true"></div>
+      <p class="loading__text">AI is crafting your brand identity…</p>
+    </div>
+
+    <!-- RESULTS SECTION -->
+    <section id="results" class="results" hidden aria-labelledby="results-heading">
+
+      <!-- Summary bar -->
+      <div class="results__summary">
+        <h2 id="results-heading" class="section-title results__heading">Your Brand Ideas</h2>
+        <button type="button" class="btn-regenerate" id="regenerateBtn" title="Generate new ideas">
+          ↺ Regenerate
+        </button>
+      </div>
+
+      <!-- Brand Names -->
+      <div class="results__category">
+        <h3 class="results__category-title">
+          <span class="results__category-icon" aria-hidden="true">🏷️</span>
+          Brand Names
+        </h3>
+        <div id="brandNamesGrid" class="card-grid" role="list"></div>
+      </div>
+
+      <!-- Slogans -->
+      <div class="results__category">
+        <h3 class="results__category-title">
+          <span class="results__category-icon" aria-hidden="true">💬</span>
+          Slogans
+        </h3>
+        <div id="slogansGrid" class="card-grid" role="list"></div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="footer">
+    <p>Built with ♥ using Vanilla JS &amp; Google Gemini API · Web Technology Final Project</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
