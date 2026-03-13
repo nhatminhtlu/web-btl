@@ -5,7 +5,7 @@
 # Nginx image that serves them on port 80.
 #
 # Build:   docker build -t ai-brand-generator .
-# Run:     docker run -p 8080:80 ai-brand-generator
+# Run:     docker run -p 8080:80 -e GEMINI_API_KEY="your_real_key_here" ai-brand-generator
 # Browse:  http://localhost:8080
 # ──────────────────────────────────────────────────────────────────────
 
@@ -53,4 +53,4 @@ RUN printf 'server {\n\
 
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/bin/sh", "-c", "printf 'GEMINI_API_KEY=\"%s\"\\n' \"$GEMINI_API_KEY\" > /usr/share/nginx/html/.env && exec nginx -g 'daemon off;'"]

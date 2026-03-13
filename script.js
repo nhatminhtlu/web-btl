@@ -21,6 +21,80 @@
 const GEMINI_API_URL =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
+/** Local frontend environment file path. */
+const ENV_FILE_PATH = './.env';
+
+/** Cached key read from .env to avoid fetching repeatedly. */
+let cachedEnvApiKey = null;
+
+/**
+ * Normalises a .env value by trimming spaces and optional surrounding quotes.
+ * @param {string} rawValue
+ * @returns {string}
+ */
+function normaliseEnvValue(rawValue) {
+  let value = rawValue.trim();
+
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1);
+  }
+
+  return value.trim();
+}
+
+/**
+ * Extracts an environment variable from .env file content.
+ * @param {string} envText
+ * @param {string} keyName
+ * @returns {string}
+ */
+function extractEnvVar(envText, keyName) {
+  const lines = envText.split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (!match) continue;
+
+    const [, key, rawValue] = match;
+    if (key === keyName) {
+      return normaliseEnvValue(rawValue);
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Loads GEMINI_API_KEY from local .env file served by the static server.
+ * @returns {Promise<string>}
+ */
+async function getApiKeyFromEnvFile() {
+  if (cachedEnvApiKey !== null) {
+    return cachedEnvApiKey;
+  }
+
+  try {
+    const response = await fetch(ENV_FILE_PATH, { cache: 'no-store' });
+    if (!response.ok) {
+      cachedEnvApiKey = '';
+      return cachedEnvApiKey;
+    }
+
+    const envText = await response.text();
+    cachedEnvApiKey = extractEnvVar(envText, 'GEMINI_API_KEY');
+    return cachedEnvApiKey;
+  } catch {
+    cachedEnvApiKey = '';
+    return cachedEnvApiKey;
+  }
+}
+
 /* =====================================================================
    DOM REFERENCES
    ===================================================================== */
@@ -37,12 +111,280 @@ const apiErrorEl      = document.getElementById('apiError');
 const brandNamesGrid  = document.getElementById('brandNamesGrid');
 const slogansGrid     = document.getElementById('slogansGrid');
 
+// NEW: Advanced options
+const brandStyleSelect = document.getElementById('brandStyle');
+const languageSelect   = document.getElementById('language');
+const numResultsSlider = document.getElementById('numResults');
+const numResultsValue  = document.getElementById('numResultsValue');
+
+// NEW: Export
+const exportBtn = document.getElementById('exportBtn');
+
+// NEW: Favorites
+const favoritesSection   = document.getElementById('favorites');
+const favoritesGrid      = document.getElementById('favoritesGrid');
+const favoritesEmpty     = document.getElementById('favoritesEmpty');
+const clearFavoritesBtn  = document.getElementById('clearFavoritesBtn');
+
 /* =====================================================================
    STATE
    ===================================================================== */
 
 /** Stores the last successful set of inputs so Regenerate can reuse them. */
 let lastInputs = null;
+
+/* =====================================================================
+   NEW: INDUSTRY TEMPLATES
+   ===================================================================== */
+
+const INDUSTRY_TEMPLATES = {
+  coffee: {
+    industry: 'Coffee shop',
+    keywords: 'organic, artisan, handcrafted, premium',
+    target: 'young professionals, coffee enthusiasts, health-conscious millennials'
+  },
+  tech: {
+    industry: 'Tech startup / SaaS company',
+    keywords: 'innovation, AI, cloud, automation, scalable',
+    target: 'entrepreneurs, developers, business owners, tech-savvy professionals'
+  },
+  fashion: {
+    industry: 'Fashion boutique',
+    keywords: 'trendy, elegant, sustainable, unique, stylish',
+    target: 'fashion-conscious women and men, 25-40 years old'
+  },
+  food: {
+    industry: 'Food & Beverage restaurant',
+    keywords: 'fresh, local, delicious, authentic, quality',
+    target: 'food lovers, families, health-conscious diners'
+  },
+  fitness: {
+    industry: 'Fitness gym & wellness center',
+    keywords: 'strength, energy, transformation, community, healthy',
+    target: 'fitness enthusiasts, beginners looking to get fit, 20-50 years old'
+  },
+  beauty: {
+    industry: 'Beauty salon & spa',
+    keywords: 'natural, luxury, glow, rejuvenation, confidence',
+    target: 'women seeking beauty treatments, self-care enthusiasts'
+  }
+};
+
+/**
+ * Fills the form with a predefined industry template.
+ * @param {string} templateKey - Key from INDUSTRY_TEMPLATES
+ */
+function fillTemplate(templateKey) {
+  const template = INDUSTRY_TEMPLATES[templateKey];
+  if (!template) return;
+
+  industryInput.value = template.industry;
+  keywordsInput.value = template.keywords;
+  targetInput.value   = template.target;
+
+  // Clear any previous errors
+  clearAllFieldErrors();
+
+  // Visual feedback
+  [industryInput, keywordsInput, targetInput].forEach(input => {
+    input.style.transition = 'background 0.3s ease';
+    input.style.background = 'rgba(124,107,255,0.1)';
+    setTimeout(() => {
+      input.style.background = '';
+    }, 600);
+  });
+}
+
+/* =====================================================================
+   NEW: FAVORITES MANAGEMENT (localStorage)
+   ===================================================================== */
+
+const FAVORITES_STORAGE_KEY = 'ai-brand-generator-favorites';
+
+/**
+ * Retrieves favorites from localStorage.
+ * @returns {Array<{text: string, explanation: string, type: string}>}
+ */
+function getFavorites() {
+  try {
+    const stored = localStorage.getItem(FAVORITES_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Saves favorites to localStorage.
+ * @param {Array} favorites
+ */
+function saveFavorites(favorites) {
+  try {
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
+  } catch (err) {
+    console.error('[saveFavorites] Failed to save:', err);
+  }
+}
+
+/**
+ * Adds an item to favorites.
+ * @param {{text: string, explanation: string, type: string}} item
+ */
+function addToFavorites(item) {
+  const favorites = getFavorites();
+  
+  // Check if already exists
+  const exists = favorites.some(fav => 
+    fav.text === item.text && fav.type === item.type
+  );
+  
+  if (!exists) {
+    favorites.push(item);
+    saveFavorites(favorites);
+    renderFavorites();
+  }
+}
+
+/**
+ * Removes an item from favorites.
+ * @param {{text: string, type: string}} item
+ */
+function removeFromFavorites(item) {
+  let favorites = getFavorites();
+  favorites = favorites.filter(fav => 
+    !(fav.text === item.text && fav.type === item.type)
+  );
+  saveFavorites(favorites);
+  renderFavorites();
+}
+
+/**
+ * Checks if an item is already favorited.
+ * @param {{text: string, type: string}} item
+ * @returns {boolean}
+ */
+function isFavorited(item) {
+  const favorites = getFavorites();
+  return favorites.some(fav => 
+    fav.text === item.text && fav.type === item.type
+  );
+}
+
+/**
+ * Clears all favorites.
+ */
+function clearAllFavorites() {
+  if (confirm('Are you sure you want to clear all saved favorites?')) {
+    saveFavorites([]);
+    renderFavorites();
+  }
+}
+
+/**
+ * Renders the favorites section.
+ */
+function renderFavorites() {
+  const favorites = getFavorites();
+  
+  if (favorites.length === 0) {
+    favoritesSection.hidden = true;
+    favoritesEmpty.hidden = false;
+    favoritesGrid.innerHTML = '';
+    return;
+  }
+
+  favoritesSection.hidden = false;
+  favoritesEmpty.hidden = true;
+  favoritesGrid.innerHTML = '';
+
+  for (const item of favorites) {
+    const card = createIdeaCard(item, item.type);
+    favoritesGrid.appendChild(card);
+  }
+}
+
+/* =====================================================================
+   NEW: EXPORT FUNCTIONALITY
+   ===================================================================== */
+
+/**
+ * Exports current results as a text file.
+ */
+function exportResults() {
+  const brandNames = Array.from(brandNamesGrid.children).map(card => ({
+    text: card.querySelector('.card__text').textContent,
+    explanation: card.querySelector('.card__explanation').textContent
+  }));
+
+  const slogans = Array.from(slogansGrid.children).map(card => ({
+    text: card.querySelector('.card__text').textContent,
+    explanation: card.querySelector('.card__explanation').textContent
+  }));
+
+  if (brandNames.length === 0 && slogans.length === 0) {
+    alert('No results to export. Please generate ideas first.');
+    return;
+  }
+
+  let content = '═══════════════════════════════════════════════\n';
+  content += '   AI BRAND NAME & SLOGAN GENERATOR\n';
+  content += '   Generated Brand Ideas\n';
+  content += '═══════════════════════════════════════════════\n\n';
+
+  if (lastInputs) {
+    content += '📋 INPUT DETAILS:\n';
+    content += `Industry: ${lastInputs.industry}\n`;
+    content += `Keywords: ${lastInputs.keywords}\n`;
+    content += `Target Customers: ${lastInputs.target}\n`;
+    content += `Style: ${brandStyleSelect.options[brandStyleSelect.selectedIndex].text}\n`;
+    content += `Language: ${languageSelect.options[languageSelect.selectedIndex].text}\n`;
+    content += '\n';
+  }
+
+  content += '═══════════════════════════════════════════════\n';
+  content += '🏷️  BRAND NAMES\n';
+  content += '═══════════════════════════════════════════════\n\n';
+
+  brandNames.forEach((item, index) => {
+    content += `${index + 1}. ${item.text}\n`;
+    content += `   ${item.explanation}\n\n`;
+  });
+
+  content += '\n═══════════════════════════════════════════════\n';
+  content += '💬 SLOGANS\n';
+  content += '═══════════════════════════════════════════════\n\n';
+
+  slogans.forEach((item, index) => {
+    content += `${index + 1}. ${item.text}\n`;
+    content += `   ${item.explanation}\n\n`;
+  });
+
+  content += '\n═══════════════════════════════════════════════\n';
+  content += `Generated on: ${new Date().toLocaleString()}\n`;
+  content += '═══════════════════════════════════════════════\n';
+
+  // Create and download the file
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `brand-ideas-${Date.now()}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  // Visual feedback
+  const originalText = exportBtn.textContent;
+  exportBtn.textContent = '✓ Exported!';
+  exportBtn.style.borderColor = 'var(--clr-success)';
+  exportBtn.style.color = 'var(--clr-success)';
+  setTimeout(() => {
+    exportBtn.textContent = originalText;
+    exportBtn.style.borderColor = '';
+    exportBtn.style.color = '';
+  }, 2000);
+}
 
 /* =====================================================================
    FORM — VALIDATION HELPERS
@@ -169,19 +511,50 @@ function hideLoading() {
  * @param {string} industry  - The business industry.
  * @param {string} keywords  - Comma-separated core keywords.
  * @param {string} target    - Description of target customers.
+ * @param {Object} options   - Additional options (style, language, numResults)
  * @returns {string}         - Formatted prompt string.
  */
-function buildPrompt(industry, keywords, target) {
+function buildPrompt(industry, keywords, target, options = {}) {
+  const {
+    style = 'modern',
+    language = 'english',
+    numResults = 8
+  } = options;
+
+  // Style descriptions
+  const styleDescriptions = {
+    modern: 'modern, innovative, tech-savvy, forward-thinking',
+    classic: 'classic, timeless, elegant, sophisticated',
+    fun: 'fun, playful, energetic, vibrant, youthful',
+    professional: 'professional, serious, trustworthy, authoritative',
+    luxury: 'luxury, premium, exclusive, high-end, refined',
+    minimalist: 'minimalist, clean, simple, uncluttered, zen-like'
+  };
+
+  // Language instructions
+  const languageInstructions = {
+    english: 'Generate all brand names and slogans in English.',
+    vietnamese: 'Generate all brand names and slogans in Vietnamese (Tiếng Việt).',
+    bilingual: 'Generate brand names that work in both English and Vietnamese. Include explanations in both languages where appropriate.'
+  };
+
+  const styleDesc = styleDescriptions[style] || styleDescriptions.modern;
+  const langInstruction = languageInstructions[language] || languageInstructions.english;
+
   return `
-You are a creative branding expert. Generate exactly 8 brand name ideas and 8 slogan ideas
+You are a creative branding expert. Generate exactly ${numResults} brand name ideas and ${numResults} slogan ideas
 for a business based on the following information:
 
 Business industry: ${industry}
 Main keywords: ${keywords}
 Target customers: ${target}
+Brand style/tone: ${styleDesc}
+
+${langInstruction}
 
 Requirements:
 - Each brand name and slogan must be unique, memorable, and relevant.
+- The style and tone should reflect: ${styleDesc}
 - Each item must include a short explanation (1–2 sentences) of its meaning or emotional message.
 - Brand names should be concise (1–3 words).
 - Slogans should be short and punchy (3–8 words).
@@ -210,11 +583,12 @@ Return ONLY valid JSON with this exact structure (no markdown, no extra text):
  * @throws {Error} If the network request fails or the response is unparseable.
  */
 async function callAIAPI(prompt) {
-  const apiKey = typeof CONFIG !== 'undefined' && CONFIG.GEMINI_API_KEY;
+  const envApiKey = await getApiKeyFromEnvFile();
+  const apiKey = envApiKey;
 
   if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
     throw new Error(
-      'Gemini API key is not configured. Please copy config.example.js to config.js and add your API key.',
+      'Gemini API key is not configured. Please set GEMINI_API_KEY in .env.',
     );
   }
 
@@ -405,17 +779,27 @@ async function copyToClipboard(text, btnEl) {
  * Creates a single idea card DOM element.
  *
  * @param {{ text: string, explanation: string }} item
+ * @param {string} type - 'brandName' or 'slogan'
  * @returns {HTMLElement}
  */
-function createIdeaCard(item) {
+function createIdeaCard(item, type = 'brandName') {
   const card = document.createElement('article');
   card.className = 'card';
   card.setAttribute('role', 'listitem');
+
+  const itemWithType = { ...item, type };
+  const favorited = isFavorited(itemWithType);
 
   card.innerHTML = `
     <p class="card__text">${escapeHtml(item.text)}</p>
     <p class="card__explanation">${escapeHtml(item.explanation)}</p>
     <div class="card__footer">
+      <button class="btn-favorite ${favorited ? 'is-favorited' : ''}" 
+              type="button" 
+              aria-label="Save to favorites"
+              title="${favorited ? 'Remove from favorites' : 'Add to favorites'}">
+        ${favorited ? '❤️' : '🤍'}
+      </button>
       <button class="btn-copy" type="button" aria-label="Copy: ${escapeHtml(item.text)}">
         ⎘ Copy
       </button>
@@ -425,6 +809,22 @@ function createIdeaCard(item) {
   // Attach copy handler
   const copyBtn = card.querySelector('.btn-copy');
   copyBtn.addEventListener('click', () => copyToClipboard(item.text, copyBtn));
+
+  // Attach favorite handler
+  const favBtn = card.querySelector('.btn-favorite');
+  favBtn.addEventListener('click', () => {
+    if (isFavorited(itemWithType)) {
+      removeFromFavorites(itemWithType);
+      favBtn.textContent = '🤍';
+      favBtn.classList.remove('is-favorited');
+      favBtn.title = 'Add to favorites';
+    } else {
+      addToFavorites(itemWithType);
+      favBtn.textContent = '❤️';
+      favBtn.classList.add('is-favorited');
+      favBtn.title = 'Remove from favorites';
+    }
+  });
 
   return card;
 }
@@ -454,11 +854,11 @@ function renderResults(data) {
   slogansGrid.innerHTML    = '';
 
   for (const item of data.brandNames) {
-    brandNamesGrid.appendChild(createIdeaCard(item));
+    brandNamesGrid.appendChild(createIdeaCard(item, 'brandName'));
   }
 
   for (const item of data.slogans) {
-    slogansGrid.appendChild(createIdeaCard(item));
+    slogansGrid.appendChild(createIdeaCard(item, 'slogan'));
   }
 
   resultsEl.hidden = false;
@@ -482,7 +882,15 @@ async function generateIdeas(inputs) {
 
   try {
     console.log('[generateIdeas] Building prompt…');
-    const prompt = buildPrompt(inputs.industry, inputs.keywords, inputs.target);
+    
+    // Gather advanced options
+    const options = {
+      style: brandStyleSelect.value,
+      language: languageSelect.value,
+      numResults: parseInt(numResultsSlider.value, 10)
+    };
+    
+    const prompt = buildPrompt(inputs.industry, inputs.keywords, inputs.target, options);
 
     console.log('[generateIdeas] Calling Gemini API…');
     const data   = await callAIAPI(prompt);
@@ -529,4 +937,32 @@ regenerateBtn.addEventListener('click', async () => {
 [industryInput, keywordsInput, targetInput].forEach((input) => {
   const errorEl = document.getElementById(`${input.id}-error`);
   input.addEventListener('input', () => clearFieldError(input, errorEl));
+});
+
+/* =====================================================================
+   NEW: EVENT LISTENERS FOR NEW FEATURES
+   ===================================================================== */
+
+/** Template buttons — quick fill form fields. */
+document.querySelectorAll('.btn-template').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const templateKey = btn.dataset.template;
+    fillTemplate(templateKey);
+  });
+});
+
+/** Number of results slider — update display value. */
+numResultsSlider.addEventListener('input', () => {
+  numResultsValue.textContent = numResultsSlider.value;
+});
+
+/** Export button — download results as text file. */
+exportBtn.addEventListener('click', exportResults);
+
+/** Clear favorites button. */
+clearFavoritesBtn.addEventListener('click', clearAllFavorites);
+
+/** Load favorites on page load. */
+document.addEventListener('DOMContentLoaded', () => {
+  renderFavorites();
 });
