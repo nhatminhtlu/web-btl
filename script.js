@@ -21,11 +21,11 @@
 const GEMINI_API_URL =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
-/** Local frontend environment file path. */
-const ENV_FILE_PATH = './.env';
+/** Preferred same-origin proxy endpoint (Vercel Serverless Function). */
+const GEMINI_PROXY_API_URL = '/api/generate';
 
-/** Cached key read from .env to avoid fetching repeatedly. */
-let cachedEnvApiKey = null;
+/** Local frontend environment file paths for static hosting fallback. */
+const ENV_FILE_PATHS = ['./.env', '/.env', './.env.local', '/.env.local'];
 
 /**
  * Normalises a .env value by trimming spaces and optional surrounding quotes.
@@ -75,24 +75,25 @@ function extractEnvVar(envText, keyName) {
  * @returns {Promise<string>}
  */
 async function getApiKeyFromEnvFile() {
-  if (cachedEnvApiKey !== null) {
-    return cachedEnvApiKey;
-  }
+  for (const envPath of ENV_FILE_PATHS) {
+    try {
+      const response = await fetch(envPath, { cache: 'no-store' });
+      if (!response.ok) {
+        continue;
+      }
 
-  try {
-    const response = await fetch(ENV_FILE_PATH, { cache: 'no-store' });
-    if (!response.ok) {
-      cachedEnvApiKey = '';
-      return cachedEnvApiKey;
+      const envText = await response.text();
+      const apiKey = extractEnvVar(envText, 'GEMINI_API_KEY');
+
+      if (apiKey) {
+        return apiKey;
+      }
+    } catch {
+      continue;
     }
-
-    const envText = await response.text();
-    cachedEnvApiKey = extractEnvVar(envText, 'GEMINI_API_KEY');
-    return cachedEnvApiKey;
-  } catch {
-    cachedEnvApiKey = '';
-    return cachedEnvApiKey;
   }
+
+  return '';
 }
 
 /* =====================================================================
@@ -583,12 +584,101 @@ Return ONLY valid JSON with this exact structure (no markdown, no extra text):
  * @throws {Error} If the network request fails or the response is unparseable.
  */
 async function callAIAPI(prompt) {
+  try {
+    return await callProxyAPI(prompt);
+  } catch (proxyError) {
+    const message = String(proxyError?.message || '');
+    const canFallbackToDirectApi =
+      message.includes('Proxy endpoint not found') ||
+      message.includes('Network error while calling proxy') ||
+      message.includes('Method not allowed on proxy') ||
+      message.includes('Proxy endpoint does not support POST');
+
+    if (!canFallbackToDirectApi) {
+      throw proxyError;
+    }
+
+    console.warn('[callAIAPI] Proxy unavailable, falling back to direct Gemini call.');
+    return callGeminiDirectAPI(prompt);
+  }
+}
+
+/**
+ * Calls same-origin backend proxy (recommended for Vercel deployments).
+ * @param {string} prompt
+ * @returns {Promise<{brandNames: Array, slogans: Array}>}
+ */
+async function callProxyAPI(prompt) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+  let response;
+  try {
+    response = await fetch(GEMINI_PROXY_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+      signal: controller.signal,
+    });
+  } catch (networkError) {
+    clearTimeout(timeoutId);
+    if (networkError.name === 'AbortError') {
+      throw new Error('Request timed out after 60 seconds. Please try again.');
+    }
+    throw new Error('Network error while calling proxy API.');
+  }
+  clearTimeout(timeoutId);
+
+  if (response.status === 404) {
+    throw new Error('Proxy endpoint not found.');
+  }
+
+  if (response.status === 405) {
+    throw new Error('Method not allowed on proxy.');
+  }
+
+  if (response.status === 501) {
+    throw new Error('Proxy endpoint does not support POST.');
+  }
+
+  if (!response.ok) {
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    const serverMessage = payload?.error || payload?.message || '';
+    throw new Error(serverMessage || `API request failed with status ${response.status}.`);
+  }
+
+  const data = await response.json();
+  const brandNames = data?.brandNames;
+  const slogans = data?.slogans;
+
+  if (!Array.isArray(brandNames) || !Array.isArray(slogans)) {
+    throw new Error('Unexpected response format from backend proxy.');
+  }
+
+  return {
+    brandNames,
+    slogans,
+  };
+}
+
+/**
+ * Direct call from frontend to Gemini API (fallback for local static hosting).
+ * @param {string} prompt
+ * @returns {Promise<{brandNames: Array, slogans: Array}>}
+ */
+async function callGeminiDirectAPI(prompt) {
   const envApiKey = await getApiKeyFromEnvFile();
   const apiKey = envApiKey;
 
   if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
     throw new Error(
-      'Gemini API key is not configured. Please set GEMINI_API_KEY in .env.',
+      'Gemini API key is not configured. For local static hosting, ensure GEMINI_API_KEY exists in .env and that your server allows serving dotfiles. Or run with `vercel dev` to use server-side env.',
     );
   }
 
@@ -652,9 +742,15 @@ async function callAIAPI(prompt) {
       429: 'Rate limit exceeded — please wait a moment and try again.',
       500: 'Gemini server error — please try again in a few seconds.',
     };
-    const base =
+
+    let base =
       errorMessages[response.status] ??
       `API request failed with status ${response.status}.`;
+
+    if (isLikelyApiKeyError(detail)) {
+      base = 'Invalid or expired API key — please update GEMINI_API_KEY and try again.';
+    }
+
     const message = detail ? `${base} (${detail})` : base;
     throw new Error(message);
   }
@@ -730,6 +826,21 @@ function parseAIResponse(rawText) {
     brandNames: normalise(brandNames),
     slogans:    normalise(slogans),
   };
+}
+
+/**
+ * Detects whether an API error message is related to authentication/key issues.
+ * @param {string} detail
+ * @returns {boolean}
+ */
+function isLikelyApiKeyError(detail) {
+  const text = String(detail || '').toLowerCase();
+  return (
+    text.includes('api key') ||
+    text.includes('credential') ||
+    text.includes('expired') ||
+    text.includes('invalid key')
+  );
 }
 
 /* =====================================================================

@@ -11,7 +11,7 @@
 - Danh sách khẩu hiệu (Slogan)
 - Mỗi mục có mô tả ngắn ý nghĩa
 
-Dự án chạy hoàn toàn phía frontend, không có backend.
+Dự án là frontend thuần, kèm 1 Vercel Serverless Function (`/api/generate`) để gọi Gemini API an toàn.
 
 ---
 
@@ -53,6 +53,8 @@ Dự án chạy hoàn toàn phía frontend, không có backend.
 ```text
 web-btl/
 ├── .env.example
+├── api/
+│   └── generate.js
 ├── Dockerfile
 ├── README.md
 ├── index.html
@@ -63,7 +65,17 @@ web-btl/
 
 ---
 
-## 5) Cấu hình biến môi trường (`.env`)
+## 5) Cấu hình biến môi trường
+
+### 5.1 Vercel (khuyến nghị)
+
+- Vào **Project Settings → Environment Variables**
+- Tạo biến: `GEMINI_API_KEY`
+- Redeploy project
+
+Frontend sẽ gọi `/api/generate`; key chỉ nằm ở server (không lộ trên client).
+
+### 5.2 Local static/Docker fallback (`.env`)
 
 Tạo file `.env` ở thư mục gốc dự án:
 
@@ -81,7 +93,19 @@ GEMINI_API_KEY="YOUR_REAL_GEMINI_API_KEY"
 
 ## 6) Chạy cục bộ (Local)
 
-### Bước 1: Chạy static server
+### Bước 1 (khuyên dùng): Chạy bằng Vercel dev để có `/api/generate`
+
+```bash
+vercel dev
+```
+
+Mở trình duyệt:
+
+```text
+http://localhost:3000
+```
+
+### Bước 2 (fallback): Chạy static server thuần
 
 ```bash
 python3 -m http.server 8000
@@ -93,7 +117,7 @@ python3 -m http.server 8000
 http://localhost:8000
 ```
 
-> Lưu ý: Ứng dụng đọc key bằng cách tải file `/.env` từ static server.
+> Lưu ý: Chế độ static thuần không có `/api/generate`, nên app sẽ fallback đọc key từ `/.env`.
 
 ---
 
@@ -131,9 +155,10 @@ docker rm ai-brand-generator
 
 ## 8) Cách ứng dụng lấy API key (đúng với project hiện tại)
 
-- `script.js` sẽ gọi `fetch('./.env')`
-- Parse biến `GEMINI_API_KEY` từ nội dung file `.env`
-- Trong Docker, `CMD` sẽ tự tạo `/usr/share/nginx/html/.env` từ biến môi trường `GEMINI_API_KEY`
+- Ưu tiên: `script.js` gọi `POST /api/generate`
+- `api/generate.js` đọc key từ `process.env.GEMINI_API_KEY` và gọi Gemini ở phía server
+- Fallback local: nếu không có endpoint `/api/generate`, frontend mới đọc `/.env`
+- Trong Docker, `CMD` tạo `/usr/share/nginx/html/.env` từ biến môi trường `GEMINI_API_KEY`
 
 Nếu thiếu key, ứng dụng sẽ báo lỗi cấu hình API key.
 
@@ -169,7 +194,7 @@ Nếu thiếu key, ứng dụng sẽ báo lỗi cấu hình API key.
 
 ## 11) Lưu ý bảo mật
 
-Vì đây là ứng dụng frontend-only, API key có thể bị nhìn thấy từ phía client. Cách hiện tại phù hợp để học tập/demo. Nếu triển khai production thực tế, nên bổ sung backend/proxy để ẩn API key.
+Khi deploy Vercel, nên dùng `GEMINI_API_KEY` trong Environment Variables và để frontend gọi qua `/api/generate` để không lộ key. Không commit API key vào GitHub.
 
 ---
 
