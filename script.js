@@ -185,6 +185,7 @@ function fillTemplate(templateKey) {
 
   // Clear any previous errors
   clearAllFieldErrors();
+  hideApiError();
 
   // Visual feedback
   [industryInput, keywordsInput, targetInput].forEach(input => {
@@ -397,19 +398,33 @@ function exportResults() {
  */
 function validateInputs() {
   const fields = [
-    { el: industryInput, errorId: 'industry-error', label: 'Business Industry' },
-    { el: keywordsInput, errorId: 'keywords-error', label: 'Main Keywords'      },
-    { el: targetInput,   errorId: 'target-error',   label: 'Target Customers'   },
+    {
+      el: industryInput,
+      errorId: 'industry-error',
+      validate: (value) =>
+        validateBasicTextField(value, 'Business Industry', { min: 2, max: 80 }),
+    },
+    {
+      el: keywordsInput,
+      errorId: 'keywords-error',
+      validate: validateKeywordsField,
+    },
+    {
+      el: targetInput,
+      errorId: 'target-error',
+      validate: validateTargetField,
+    },
   ];
 
   let valid = true;
 
-  for (const { el, errorId, label } of fields) {
+  for (const { el, errorId, validate } of fields) {
     const value = el.value.trim();
     const errorEl = document.getElementById(errorId);
+    const errorMessage = validate(value);
 
-    if (!value) {
-      showFieldError(el, errorEl, `${label} is required.`);
+    if (errorMessage) {
+      showFieldError(el, errorEl, errorMessage);
       valid = false;
     } else {
       clearFieldError(el, errorEl);
@@ -417,6 +432,93 @@ function validateInputs() {
   }
 
   return valid;
+}
+
+/**
+ * Validates a standard text field with length and safe-character rules.
+ * @param {string} value
+ * @param {string} label
+ * @param {{min: number, max: number}} limits
+ * @returns {string}
+ */
+function validateBasicTextField(value, label, limits) {
+  if (!value) return `${label} is required.`;
+
+  if (value.length < limits.min) {
+    return `${label} must be at least ${limits.min} characters.`;
+  }
+
+  if (value.length > limits.max) {
+    return `${label} must be under ${limits.max} characters.`;
+  }
+
+  if (containsInvalidInputCharacters(value)) {
+    return `${label} contains invalid characters.`;
+  }
+
+  return '';
+}
+
+/**
+ * Validates keyword input format.
+ * @param {string} value
+ * @returns {string}
+ */
+function validateKeywordsField(value) {
+  const baseError = validateBasicTextField(value, 'Main Keywords', {
+    min: 3,
+    max: 160,
+  });
+
+  if (baseError) return baseError;
+
+  const keywords = value
+    .split(',')
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
+
+  if (keywords.length < 2) {
+    return 'Please enter at least 2 keywords, separated by commas.';
+  }
+
+  if (keywords.some((keyword) => keyword.length < 2)) {
+    return 'Each keyword should be at least 2 characters long.';
+  }
+
+  if (new Set(keywords.map((keyword) => keyword.toLowerCase())).size !== keywords.length) {
+    return 'Please avoid duplicate keywords.';
+  }
+
+  return '';
+}
+
+/**
+ * Validates target customer input format.
+ * @param {string} value
+ * @returns {string}
+ */
+function validateTargetField(value) {
+  const baseError = validateBasicTextField(value, 'Target Customers', {
+    min: 4,
+    max: 120,
+  });
+
+  if (baseError) return baseError;
+
+  if (value.split(/\s+/).length < 2) {
+    return 'Target Customers should include at least two words.';
+  }
+
+  return '';
+}
+
+/**
+ * Rejects characters that commonly break prompts or input rendering.
+ * @param {string} value
+ * @returns {boolean}
+ */
+function containsInvalidInputCharacters(value) {
+  return /[<>`]/.test(value);
 }
 
 /** Marks a field as invalid and shows the error message. */
@@ -455,7 +557,8 @@ function clearAllFieldErrors() {
  * @param {string} message - Human-readable error description.
  */
 function showApiError(message) {
-  apiErrorEl.textContent = `⚠️ ${message}`;
+  const userMessage = String(message || 'Unable to generate ideas right now. Please try again.');
+  apiErrorEl.textContent = `⚠️ ${userMessage}`;
   apiErrorEl.hidden = false;
   // Scroll the banner into view
   apiErrorEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -465,6 +568,38 @@ function showApiError(message) {
 function hideApiError() {
   apiErrorEl.textContent = '';
   apiErrorEl.hidden = true;
+}
+
+/**
+ * Maps low-level API/network errors to user-friendly text.
+ * @param {Error} error
+ * @returns {string}
+ */
+function formatApiErrorMessage(error) {
+  const rawMessage = String(error?.message || '').trim();
+  const normalized = rawMessage.toLowerCase();
+
+  if (!rawMessage) {
+    return 'Unable to generate ideas right now. Please try again.';
+  }
+
+  if (normalized.includes('timed out')) {
+    return 'The AI service took too long to respond. Please try again in a few seconds.';
+  }
+
+  if (normalized.includes('network error')) {
+    return 'Cannot reach the AI service. Please check your internet connection and try again.';
+  }
+
+  if (normalized.includes('rate limit')) {
+    return 'The AI service is busy right now. Please wait a moment and try again.';
+  }
+
+  if (normalized.includes('api key') || normalized.includes('credential')) {
+    return 'AI API key is missing or invalid. Please verify your GEMINI_API_KEY configuration.';
+  }
+
+  return rawMessage;
 }
 
 /* =====================================================================
@@ -995,10 +1130,15 @@ async function generateIdeas(inputs) {
     console.log('[generateIdeas] Building prompt…');
     
     // Gather advanced options
+    const requestedNumResults = Number.parseInt(numResultsSlider.value, 10);
+    const safeNumResults = Number.isFinite(requestedNumResults)
+      ? Math.min(15, Math.max(5, requestedNumResults))
+      : 8;
+
     const options = {
       style: brandStyleSelect.value,
       language: languageSelect.value,
-      numResults: parseInt(numResultsSlider.value, 10)
+      numResults: safeNumResults,
     };
     
     const prompt = buildPrompt(inputs.industry, inputs.keywords, inputs.target, options);
@@ -1011,7 +1151,7 @@ async function generateIdeas(inputs) {
     console.log('[generateIdeas] Done ✓');
   } catch (error) {
     console.error('[generateIdeas] Error:', error);
-    showApiError(error.message);
+    showApiError(formatApiErrorMessage(error));
   } finally {
     hideLoading();
   }
@@ -1024,6 +1164,7 @@ async function generateIdeas(inputs) {
 /** Form submit — validate, gather inputs, kick off generation. */
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
+  hideApiError();
   clearAllFieldErrors();
 
   if (!validateInputs()) return;
@@ -1047,7 +1188,10 @@ regenerateBtn.addEventListener('click', async () => {
 /** Clear field error on input to give immediate positive feedback. */
 [industryInput, keywordsInput, targetInput].forEach((input) => {
   const errorEl = document.getElementById(`${input.id}-error`);
-  input.addEventListener('input', () => clearFieldError(input, errorEl));
+  input.addEventListener('input', () => {
+    clearFieldError(input, errorEl);
+    hideApiError();
+  });
 });
 
 /* =====================================================================

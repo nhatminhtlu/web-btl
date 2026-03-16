@@ -67,6 +67,8 @@ web-btl/
 
 ## 5) Cấu hình biến môi trường
 
+> ⚠️ **Quan trọng:** API key từ AI Studio trong đồ án này chỉ dùng cho mục đích học tập/thực hành. Không dùng cấu hình này cho môi trường production.
+
 ### 5.1 Vercel (khuyến nghị)
 
 - Vào **Project Settings → Environment Variables**
@@ -88,6 +90,8 @@ Sau đó sửa giá trị API key:
 ```env
 GEMINI_API_KEY="YOUR_REAL_GEMINI_API_KEY"
 ```
+
+Khuyến nghị cho production: giữ API key ở backend, thêm cơ chế xác thực, giới hạn tần suất (rate limiting), và xoay vòng key định kỳ.
 
 ---
 
@@ -195,6 +199,8 @@ Nếu thiếu key, ứng dụng sẽ báo lỗi cấu hình API key.
 ## 11) Lưu ý bảo mật
 
 Khi deploy Vercel, nên dùng `GEMINI_API_KEY` trong Environment Variables và để frontend gọi qua `/api/generate` để không lộ key. Không commit API key vào GitHub.
+
+Nhắc lại: mô hình triển khai trong đồ án này ưu tiên tính đơn giản để phục vụ học tập. Với môi trường production thực tế, cần kiến trúc bảo mật đầy đủ hơn cho API key và lưu lượng truy cập.
 
 ---
 

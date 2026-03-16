@@ -3,12 +3,18 @@
 const GEMINI_API_URL =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
+/**
+ * Vercel Serverless Function proxy for Gemini API.
+ * Keeps API key on the server and returns normalized JSON for the frontend.
+ */
 module.exports = async (req, res) => {
+  // Enforce POST only.
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method not allowed. Use POST.' });
   }
 
+  // Read API key from server environment.
   const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
   if (!apiKey) {
     return res.status(500).json({
@@ -16,6 +22,7 @@ module.exports = async (req, res) => {
     });
   }
 
+  // Parse and validate request body.
   let prompt = '';
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
@@ -28,6 +35,7 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Missing required field: prompt.' });
   }
 
+  // Build Gemini request payload.
   const requestBody = {
     contents: [
       {
@@ -47,6 +55,7 @@ module.exports = async (req, res) => {
 
   let geminiResponse;
   try {
+    // Forward request to Gemini API with server-side key.
     geminiResponse = await fetch(`${GEMINI_API_URL}?key=${encodeURIComponent(apiKey)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -101,6 +110,7 @@ module.exports = async (req, res) => {
   }
 
   try {
+    // Parse/normalize model output before returning to frontend.
     const parsed = parseAIResponse(rawText);
     return res.status(200).json(parsed);
   } catch (error) {
@@ -110,6 +120,11 @@ module.exports = async (req, res) => {
   }
 };
 
+/**
+ * Extracts valid JSON from model output and normalizes response shape.
+ * @param {string} rawText
+ * @returns {{ brandNames: Array<{text: string, explanation: string}>, slogans: Array<{text: string, explanation: string}> }}
+ */
 function parseAIResponse(rawText) {
   let cleaned = rawText
     .replace(/^[\s\S]*?```(?:json)?\s*/i, '')

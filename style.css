@@ -106,7 +106,7 @@ a:hover {
 .header {
   background: var(--clr-surface);
   border-bottom: 1px solid var(--clr-border);
-  padding: var(--space-xl) var(--space-lg);
+  padding: clamp(1.1rem, 3vw, 1.9rem) var(--space-lg) clamp(0.9rem, 2vw, 1.4rem);
   text-align: center;
   position: relative;
   overflow: hidden;
@@ -128,13 +128,13 @@ a:hover {
 }
 
 .header__logo {
-  font-size: 2.5rem;
+  font-size: 2rem;
   background: var(--grad-brand);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   display: inline-block;
-  margin-bottom: var(--space-sm);
+  margin-bottom: var(--space-xs);
   animation: pulseLogo 3s ease-in-out infinite;
 }
 
@@ -144,7 +144,7 @@ a:hover {
 }
 
 .header__title {
-  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-size: clamp(1.5rem, 3.5vw, 2.25rem);
   font-weight: 800;
   letter-spacing: -0.02em;
   background: var(--grad-brand);
@@ -152,13 +152,13 @@ a:hover {
   -webkit-text-fill-color: transparent;
   background-clip: text;
   line-height: 1.2;
-  margin-bottom: var(--space-sm);
+  margin-bottom: var(--space-xs);
 }
 
 .header__subtitle {
   color: var(--clr-text-muted);
-  font-size: 1.05rem;
-  max-width: 480px;
+  font-size: 0.95rem;
+  max-width: 560px;
   margin: 0 auto;
 }
 
@@ -170,7 +170,7 @@ a:hover {
   width: 100%;
   max-width: 900px;
   margin: 0 auto;
-  padding: var(--space-xl) var(--space-lg);
+  padding: var(--space-lg) var(--space-lg) var(--space-xl);
 }
 
 /* ----- Section title ----- */
@@ -219,12 +219,6 @@ a:hover {
   margin-left: 2px;
 }
 
-.form__input-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
 .form__input {
   width: 100%;
   background: var(--clr-surface);
@@ -268,28 +262,6 @@ a:hover {
   font-size: 0.82rem;
   color: var(--clr-text-faint);
   margin-top: 2px;
-}
-
-/* Toggle API key visibility button */
-.form__toggle-key {
-  position: absolute;
-  right: 0.75rem;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.05rem;
-  color: var(--clr-text-faint);
-  padding: 0.25rem;
-  line-height: 1;
-  transition: color var(--transition-fast);
-  user-select: none;
-}
-
-.form__toggle-key:hover { color: var(--clr-primary); }
-
-/* When API key input has toggle button — add right padding */
-.form__input-wrapper .form__input {
-  padding-right: 2.5rem;
 }
 
 /* Global API error banner */
@@ -472,7 +444,6 @@ a:hover {
     border-color var(--transition-normal);
   animation: fadeInUp var(--transition-slow) both;
   cursor: default;
-  role: listitem;
 }
 
 .card:hover {
@@ -496,14 +467,6 @@ a:hover {
 }
 
 /* Card footer: copy button aligned to the right */
-.card__footer {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: auto;
-  padding-top: var(--space-xs);
-  border-top: 1px solid var(--clr-border);
-}
-
 /* Copy button */
 .btn-copy {
   background: none;
@@ -893,11 +856,15 @@ a:hover {
    ===================================================== */
 @media (max-width: 420px) {
   .header {
-    padding: var(--space-lg) var(--space-md);
+    padding: var(--space-md);
   }
 
   .header__title {
-    font-size: 1.7rem;
+    font-size: 1.45rem;
+  }
+
+  .header__subtitle {
+    font-size: 0.9rem;
   }
 
   .btn-generate {
